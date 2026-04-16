@@ -5,7 +5,6 @@
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
-#include <bcrypt.h>
 #include <wincrypt.h>
 #else
 #include <openssl/evp.h>
