@@ -80,8 +80,10 @@ static int get_server_time_diff_winhttp()
             break;
 
         cJSON *j_server_time = cJSON_GetObjectItemCaseSensitive(j_response, "server_time");
-        if (cJSON_IsString(j_server_time) && (NULL != j_server_time->valuestring))
-            server_time = atoi(j_server_time->valuestring);
+        if (!cJSON_IsString(j_server_time) || (NULL == j_server_time->valuestring))
+            break;
+
+        server_time = atoi(j_server_time->valuestring);
 
     } while (0);
 
@@ -138,8 +140,10 @@ static int get_server_time_diff_curl()
             break;
 
         cJSON *j_server_time = cJSON_GetObjectItemCaseSensitive(j_response, "server_time");
-        if (cJSON_IsString(j_server_time) && (NULL != j_server_time->valuestring))
-            server_time = atoi(j_server_time->valuestring);
+        if (!cJSON_IsString(j_server_time) || (NULL == j_server_time->valuestring))
+            break;
+
+        server_time = atoi(j_server_time->valuestring);
 
     } while (0);
 
