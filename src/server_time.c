@@ -92,7 +92,7 @@ static int get_server_time_diff_winhttp()
     if (0 == server_time)
         return 0;
 
-    return server_time - time(NULL);
+    return (int)(server_time - time(NULL));
 }
 #else
 static size_t write_cb(void *data, size_t size, size_t nmemb, void *clientp)
@@ -167,5 +167,5 @@ int get_server_time_diff()
 
 int get_steam_time(int server_time_diff)
 {
-    return time(NULL) + server_time_diff;
+    return (int)(time(NULL) + server_time_diff);
 } // get_steam_time

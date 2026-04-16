@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#ifdef _MSC_VER
+#define strdup _strdup
+#endif
 #include "cJSON.h"
 
 typedef struct {
