@@ -5,6 +5,13 @@
 #define MAX_DECODED_SECRET_LEN 64
 #define MAX_SHARED_SECRET_LEN 128
 
+typedef struct
+{
+    BLOBHEADER header;
+    DWORD key_size;
+    BYTE key_data[MAX_DECODED_SECRET_LEN];
+} hmac_key_blob_t;
+
 int gen_auth_code(char *out, const char *shared_secret, const int server_time_diff)
 {
     const char code_dict[27] = "23456789BCDFGHJKMNPQRTVWXY";
@@ -71,16 +78,12 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     BYTE hdata[20];
     DWORD hdata_len = sizeof(hdata);
 
-    struct
-    {
-        BLOBHEADER header;
-        DWORD key_size;
-        BYTE key_data[MAX_DECODED_SECRET_LEN];
-    } key_blob;
+    hmac_key_blob_t key_blob;
 
     memset(&key_blob, 0, sizeof(key_blob));
     key_blob.header.bType = PLAINTEXTKEYBLOB;
     key_blob.header.bVersion = CUR_BLOB_VERSION;
+    // For PLAINTEXTKEYBLOB + CRYPT_IPSEC_HMAC_KEY imports, CryptoAPI expects CALG_RC2.
     key_blob.header.aiKeyAlg = CALG_RC2;
     key_blob.key_size = dec_shared_secret_len;
     memcpy(key_blob.key_data, dec_shared_secret, dec_shared_secret_len);
