@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <string.h>
-#include <getopt.h>
 #include <stdbool.h>
-#include <curl/curl.h>
+#ifndef _WIN32
+#include <getopt.h>
+#endif
 #include "server_time.h"
 #include "steam_guard.h"
 #include "mafile.h"
 
+#ifndef _WIN32
 static const struct option options[] = 
 {
     {"help",    no_argument,       NULL, 'h'},
@@ -17,6 +19,7 @@ static const struct option options[] =
     // @todo more options
     {NULL, 0, NULL, 0},
 };
+#endif
 
 static struct {
     // params
@@ -46,6 +49,38 @@ void print_usage(char **argv)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    for (int i = 1; i < argc; i++)
+    {
+        if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
+        {
+            print_usage(argv);
+            exit(EXIT_SUCCESS);
+        }
+        else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--align"))
+        {
+            self.align = true;
+        }
+        else if (!strcmp(argv[i], "-n") || !strcmp(argv[i], "--no-line"))
+        {
+            self.no_line = true;
+        }
+        else if ((!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input")) && i + 1 < argc)
+        {
+            self.input_file = argv[++i];
+        }
+        else if ((!strcmp(argv[i], "-s") || !strcmp(argv[i], "--secret")) && i + 1 < argc)
+        {
+            self.shared_secret = argv[++i];
+        }
+        else
+        {
+            fprintf(stderr, "Unknown option or missing argument: %s\n", argv[i]);
+            print_usage(argv);
+            exit(EXIT_FAILURE);
+        }
+    }
+#else
     int opt;
     while ((opt = getopt_long(argc, argv, "hai:s:n", options, NULL)) != -1)
     {
@@ -74,6 +109,7 @@ int main(int argc, char **argv)
                 break;
         } // end switch
     } // end while
+#endif
 
     if (NULL == self.input_file && NULL == self.shared_secret)
     {
@@ -101,9 +137,6 @@ int main(int argc, char **argv)
 
     printf("%s", auth_code);
     if (!self.no_line) putchar('\n');
-
-    if (self.align)
-        curl_global_cleanup();
 
     return EXIT_SUCCESS;
 } // main

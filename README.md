@@ -10,3 +10,8 @@ I made this because
 # Compiling
 1. Make sure you have `make`, `gcc, `libcurl4-openssl-dev` and `libssl-dev` installed
 2. Run `make`
+
+## Visual Studio 2019 (Windows)
+1. Open `steam-guard.sln` in Visual Studio 2019.
+2. Build the `steam-guard` project (`Debug` or `Release`, `x86` or `x64`).
+3. The Windows build uses WinHTTP for server-time requests and Windows crypto APIs instead of cURL/OpenSSL.
