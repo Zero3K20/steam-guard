@@ -1,4 +1,6 @@
 #include "steam_guard.h"
+#include <ctype.h>
+#include <stdlib.h>
 
 int gen_auth_code(char *out, const char *shared_secret, const int server_time_diff)
 {
@@ -17,10 +19,35 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     if (!CryptStringToBinaryA(shared_secret, 0, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
         return 1;
 #else
-    unsigned char dec_shared_secret[32];
-    int dec_shared_secret_len = EVP_DecodeBlock(dec_shared_secret, (unsigned char *)shared_secret, strlen(shared_secret));
+    unsigned char dec_shared_secret[64];
+    char shared_secret_buf[128];
+    size_t shared_secret_len = strlen(shared_secret);
+    size_t shared_secret_offset = 0;
+
+    while (shared_secret_offset < shared_secret_len && isspace((unsigned char)shared_secret[shared_secret_offset]))
+        shared_secret_offset++;
+    while (shared_secret_len > shared_secret_offset && isspace((unsigned char)shared_secret[shared_secret_len - 1]))
+        shared_secret_len--;
+    shared_secret_len -= shared_secret_offset;
+
+    if (0 == shared_secret_len || shared_secret_len >= sizeof(shared_secret_buf))
+        return 1;
+
+    memcpy(shared_secret_buf, shared_secret + shared_secret_offset, shared_secret_len);
+    shared_secret_buf[shared_secret_len] = '\0';
+
+    int dec_shared_secret_len = EVP_DecodeBlock(dec_shared_secret, (unsigned char *)shared_secret_buf, shared_secret_len);
 
     if (-1 == dec_shared_secret_len)
+        return 1;
+
+    while (shared_secret_len && '=' == shared_secret_buf[shared_secret_len - 1])
+    {
+        dec_shared_secret_len--;
+        shared_secret_len--;
+    }
+
+    if (dec_shared_secret_len <= 0 || dec_shared_secret_len > (int)sizeof(dec_shared_secret))
         return 1;
 #endif
 
@@ -37,7 +64,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
 #ifdef _WIN32
     BCRYPT_ALG_HANDLE alg_handle = NULL;
     BCRYPT_HASH_HANDLE hash_handle = NULL;
-    BYTE hash_object[256];
+    BYTE *hash_object = NULL;
     DWORD hash_object_len = 0;
     DWORD data_len = 0;
     BYTE hdata[20];
@@ -46,8 +73,14 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     if (BCryptOpenAlgorithmProvider(&alg_handle, BCRYPT_SHA1_ALGORITHM, NULL, BCRYPT_ALG_HANDLE_HMAC_FLAG) < 0)
         return 1;
 
-    if (BCryptGetProperty(alg_handle, BCRYPT_OBJECT_LENGTH, (PUCHAR)&hash_object_len, sizeof(hash_object_len), &data_len, 0) < 0 ||
-        hash_object_len > sizeof(hash_object))
+    if (BCryptGetProperty(alg_handle, BCRYPT_OBJECT_LENGTH, (PUCHAR)&hash_object_len, sizeof(hash_object_len), &data_len, 0) < 0)
+    {
+        BCryptCloseAlgorithmProvider(alg_handle, 0);
+        return 1;
+    }
+
+    hash_object = (BYTE *)malloc(hash_object_len);
+    if (NULL == hash_object)
     {
         BCryptCloseAlgorithmProvider(alg_handle, 0);
         return 1;
@@ -55,6 +88,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
 
     if (BCryptCreateHash(alg_handle, &hash_handle, hash_object, hash_object_len, dec_shared_secret, dec_shared_secret_len, 0) < 0)
     {
+        free(hash_object);
         BCryptCloseAlgorithmProvider(alg_handle, 0);
         return 1;
     }
@@ -63,11 +97,13 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
         BCryptFinishHash(hash_handle, hdata, hdata_len, 0) < 0)
     {
         BCryptDestroyHash(hash_handle);
+        free(hash_object);
         BCryptCloseAlgorithmProvider(alg_handle, 0);
         return 1;
     }
 
     BCryptDestroyHash(hash_handle);
+    free(hash_object);
     BCryptCloseAlgorithmProvider(alg_handle, 0);
 #else
     uint8_t *hdata = HMAC(EVP_sha1(), dec_shared_secret, dec_shared_secret_len, time_array, 8, NULL, NULL);
