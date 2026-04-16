@@ -2,6 +2,10 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+#define MAX_DECODED_SECRET_LEN 64
+#define MAX_SHARED_SECRET_LEN 128
+#define MAX_BCRYPT_OBJECT_LEN 4096
+
 int gen_auth_code(char *out, const char *shared_secret, const int server_time_diff)
 {
     const char code_dict[27] = "23456789BCDFGHJKMNPQRTVWXY";
@@ -19,16 +23,17 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     if (!CryptStringToBinaryA(shared_secret, 0, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
         return 1;
 #else
-    unsigned char dec_shared_secret[64];
-    char shared_secret_buf[128];
-    size_t shared_secret_len = strlen(shared_secret);
+    unsigned char dec_shared_secret[MAX_DECODED_SECRET_LEN];
+    char shared_secret_buf[MAX_SHARED_SECRET_LEN];
+    size_t shared_secret_end = strlen(shared_secret);
     size_t shared_secret_offset = 0;
 
-    while (shared_secret_offset < shared_secret_len && isspace((unsigned char)shared_secret[shared_secret_offset]))
+    while (shared_secret_offset < shared_secret_end && isspace((unsigned char)shared_secret[shared_secret_offset]))
         shared_secret_offset++;
-    while (shared_secret_len > shared_secret_offset && isspace((unsigned char)shared_secret[shared_secret_len - 1]))
-        shared_secret_len--;
-    shared_secret_len -= shared_secret_offset;
+    while (shared_secret_end > shared_secret_offset && isspace((unsigned char)shared_secret[shared_secret_end - 1]))
+        shared_secret_end--;
+
+    size_t shared_secret_len = shared_secret_end - shared_secret_offset;
 
     if (0 == shared_secret_len || shared_secret_len >= sizeof(shared_secret_buf))
         return 1;
@@ -41,10 +46,9 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     if (-1 == dec_shared_secret_len)
         return 1;
 
-    while (shared_secret_len && '=' == shared_secret_buf[shared_secret_len - 1])
+    for (size_t i = shared_secret_len; i > 0 && '=' == shared_secret_buf[i - 1]; i--)
     {
         dec_shared_secret_len--;
-        shared_secret_len--;
     }
 
     if (dec_shared_secret_len <= 0 || dec_shared_secret_len > (int)sizeof(dec_shared_secret))
@@ -79,7 +83,13 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
         return 1;
     }
 
-    hash_object = (BYTE *)malloc(hash_object_len);
+    if (0 == hash_object_len || hash_object_len > MAX_BCRYPT_OBJECT_LEN)
+    {
+        BCryptCloseAlgorithmProvider(alg_handle, 0);
+        return 1;
+    }
+
+    hash_object = (BYTE *)calloc(1, hash_object_len);
     if (NULL == hash_object)
     {
         BCryptCloseAlgorithmProvider(alg_handle, 0);
