@@ -15,3 +15,4 @@ I made this because
 1. Open `steam-guard.sln` in Visual Studio 2019.
 2. Build the `steam-guard` project (`Debug` or `Release`, `x86` or `x64`).
 3. The Windows build uses WinHTTP for server-time requests and Windows crypto APIs instead of cURL/OpenSSL.
+4. Visual Studio is configured to copy the VC++ runtime redistributable DLLs to the build output directory.
