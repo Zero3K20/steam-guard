@@ -83,7 +83,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     memset(&key_blob, 0, sizeof(key_blob));
     key_blob.header.bType = PLAINTEXTKEYBLOB;
     key_blob.header.bVersion = CUR_BLOB_VERSION;
-    // For PLAINTEXTKEYBLOB + CRYPT_IPSEC_HMAC_KEY imports, CryptoAPI expects CALG_RC2.
+    // CALG_RC2 is used as a dummy algorithm identifier for CRYPT_IPSEC_HMAC_KEY imports.
     key_blob.header.aiKeyAlg = CALG_RC2;
     key_blob.key_size = dec_shared_secret_len;
     memcpy(key_blob.key_data, dec_shared_secret, dec_shared_secret_len);
@@ -93,12 +93,14 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
 
     if (!CryptImportKey(crypt_provider, (BYTE *)&key_blob, sizeof(BLOBHEADER) + sizeof(DWORD) + dec_shared_secret_len, 0, CRYPT_IPSEC_HMAC_KEY, &crypt_key))
     {
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
         CryptReleaseContext(crypt_provider, 0);
         return 1;
     }
 
     if (!CryptCreateHash(crypt_provider, CALG_HMAC, crypt_key, 0, &crypt_hash))
     {
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
         CryptDestroyKey(crypt_key);
         CryptReleaseContext(crypt_provider, 0);
         return 1;
@@ -110,6 +112,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
 
     if (!CryptSetHashParam(crypt_hash, HP_HMAC_INFO, (BYTE *)&hmac_info, 0))
     {
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
         CryptDestroyHash(crypt_hash);
         CryptDestroyKey(crypt_key);
         CryptReleaseContext(crypt_provider, 0);
@@ -119,12 +122,14 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     if (!CryptHashData(crypt_hash, time_array, sizeof(time_array), 0) ||
         !CryptGetHashParam(crypt_hash, HP_HASHVAL, hdata, &hdata_len, 0))
     {
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
         CryptDestroyHash(crypt_hash);
         CryptDestroyKey(crypt_key);
         CryptReleaseContext(crypt_provider, 0);
         return 1;
     }
 
+    SecureZeroMemory(&key_blob, sizeof(key_blob));
     CryptDestroyHash(crypt_hash);
     CryptDestroyKey(crypt_key);
     CryptReleaseContext(crypt_provider, 0);
