@@ -1,5 +1,7 @@
 .vscode
+.vs
 obj
+*.vcxproj.user
 
 *.maFile
 *.json
