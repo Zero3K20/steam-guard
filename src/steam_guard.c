@@ -35,7 +35,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     shared_secret_buf[shared_secret_len] = '\0';
 
 #ifdef _WIN32
-    DWORD dec_shared_secret_len = sizeof(dec_shared_secret);
+    DWORD dec_shared_secret_len = MAX_DECODED_SECRET_LEN;
     if (!CryptStringToBinaryA(shared_secret_buf, shared_secret_len, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
         return 1;
     if (0 == dec_shared_secret_len)
@@ -82,9 +82,12 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     key_blob.key_size = dec_shared_secret_len;
     memcpy(key_blob.key_data, dec_shared_secret, dec_shared_secret_len);
 
-    if (!CryptAcquireContextA(&crypt_provider, NULL, MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) &&
-        !CryptAcquireContextA(&crypt_provider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
-        return 1;
+    if (!CryptAcquireContextA(&crypt_provider, NULL, MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+    {
+        crypt_provider = 0;
+        if (!CryptAcquireContextA(&crypt_provider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+            return 1;
+    }
 
     if (!CryptImportKey(crypt_provider, (BYTE *)&key_blob, sizeof(BLOBHEADER) + sizeof(DWORD) + dec_shared_secret_len, 0, CRYPT_IPSEC_HMAC_KEY, &crypt_key))
     {
