@@ -16,3 +16,4 @@ I made this because
 2. Build the `steam-guard` project (`Debug` or `Release`, `x86` or `x64`).
 3. The Windows build uses WinHTTP for server-time requests and legacy-compatible Windows crypto APIs instead of cURL/OpenSSL.
 4. The Visual Studio project is configured to target Windows Server 2003 (and newer) APIs.
+5. Use `x86` builds on 32-bit Windows Server 2003 systems (`x64` builds require 64-bit Windows).
