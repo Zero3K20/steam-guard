@@ -38,7 +38,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     DWORD dec_shared_secret_len = MAX_DECODED_SECRET_LEN;
     if (!CryptStringToBinaryA(shared_secret_buf, shared_secret_len, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
         return 1;
-    if (0 == dec_shared_secret_len)
+    if (dec_shared_secret_len == 0)
         return 1;
 #else
     int dec_shared_secret_len = EVP_DecodeBlock(dec_shared_secret, (unsigned char *)shared_secret_buf, shared_secret_len);
@@ -84,7 +84,6 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
 
     if (!CryptAcquireContextA(&crypt_provider, NULL, MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
     {
-        crypt_provider = 0;
         if (!CryptAcquireContextA(&crypt_provider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
             return 1;
     }
