@@ -38,7 +38,7 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     DWORD dec_shared_secret_len = sizeof(dec_shared_secret);
     if (!CryptStringToBinaryA(shared_secret_buf, shared_secret_len, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
         return 1;
-    if (0 == dec_shared_secret_len || dec_shared_secret_len > sizeof(dec_shared_secret))
+    if (0 == dec_shared_secret_len)
         return 1;
 #else
     int dec_shared_secret_len = EVP_DecodeBlock(dec_shared_secret, (unsigned char *)shared_secret_buf, shared_secret_len);
