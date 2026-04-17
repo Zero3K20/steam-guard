@@ -4,25 +4,18 @@
 
 #define MAX_DECODED_SECRET_LEN 64
 #define MAX_SHARED_SECRET_LEN 128
-#define MAX_BCRYPT_OBJECT_LEN 4096
+
+typedef struct
+{
+    BLOBHEADER header;
+    DWORD key_size;
+    BYTE key_data[MAX_DECODED_SECRET_LEN];
+} hmac_key_blob_t;
 
 int gen_auth_code(char *out, const char *shared_secret, const int server_time_diff)
 {
     const char code_dict[27] = "23456789BCDFGHJKMNPQRTVWXY";
     const int code_dict_size = strlen(code_dict);
-
-#ifdef _WIN32
-    DWORD dec_shared_secret_len = 0;
-    if (!CryptStringToBinaryA(shared_secret, 0, CRYPT_STRING_BASE64, NULL, &dec_shared_secret_len, NULL, NULL))
-        return 1;
-
-    unsigned char dec_shared_secret[64];
-    if (dec_shared_secret_len > sizeof(dec_shared_secret))
-        return 1;
-
-    if (!CryptStringToBinaryA(shared_secret, 0, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
-        return 1;
-#else
     unsigned char dec_shared_secret[MAX_DECODED_SECRET_LEN];
     char shared_secret_buf[MAX_SHARED_SECRET_LEN];
     size_t shared_secret_end = strlen(shared_secret);
@@ -41,6 +34,13 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     memcpy(shared_secret_buf, shared_secret + shared_secret_offset, shared_secret_len);
     shared_secret_buf[shared_secret_len] = '\0';
 
+#ifdef _WIN32
+    DWORD dec_shared_secret_len = MAX_DECODED_SECRET_LEN;
+    if (!CryptStringToBinaryA(shared_secret_buf, shared_secret_len, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
+        return 1;
+    if (dec_shared_secret_len == 0)
+        return 1;
+#else
     int dec_shared_secret_len = EVP_DecodeBlock(dec_shared_secret, (unsigned char *)shared_secret_buf, shared_secret_len);
 
     if (-1 == dec_shared_secret_len)
@@ -66,55 +66,70 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     }
 
 #ifdef _WIN32
-    BCRYPT_ALG_HANDLE alg_handle = NULL;
-    BCRYPT_HASH_HANDLE hash_handle = NULL;
-    BYTE *hash_object = NULL;
-    DWORD hash_object_len = 0;
-    DWORD data_len = 0;
+    HCRYPTPROV crypt_provider = 0;
+    HCRYPTKEY crypt_key = 0;
+    HCRYPTHASH crypt_hash = 0;
     BYTE hdata[20];
     DWORD hdata_len = sizeof(hdata);
 
-    if (BCryptOpenAlgorithmProvider(&alg_handle, BCRYPT_SHA1_ALGORITHM, NULL, BCRYPT_ALG_HANDLE_HMAC_FLAG) < 0)
-        return 1;
+    hmac_key_blob_t key_blob;
 
-    if (BCryptGetProperty(alg_handle, BCRYPT_OBJECT_LENGTH, (PUCHAR)&hash_object_len, sizeof(hash_object_len), &data_len, 0) < 0)
+    memset(&key_blob, 0, sizeof(key_blob));
+    key_blob.header.bType = PLAINTEXTKEYBLOB;
+    key_blob.header.bVersion = CUR_BLOB_VERSION;
+    // CALG_RC2 is used as a dummy algorithm identifier for CRYPT_IPSEC_HMAC_KEY imports.
+    key_blob.header.aiKeyAlg = CALG_RC2;
+    key_blob.key_size = dec_shared_secret_len;
+    memcpy(key_blob.key_data, dec_shared_secret, dec_shared_secret_len);
+
+    if (!CryptAcquireContextA(&crypt_provider, NULL, MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
     {
-        BCryptCloseAlgorithmProvider(alg_handle, 0);
+        if (!CryptAcquireContextA(&crypt_provider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+            return 1;
+    }
+
+    if (!CryptImportKey(crypt_provider, (BYTE *)&key_blob, sizeof(BLOBHEADER) + sizeof(DWORD) + dec_shared_secret_len, 0, CRYPT_IPSEC_HMAC_KEY, &crypt_key))
+    {
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
+        CryptReleaseContext(crypt_provider, 0);
         return 1;
     }
 
-    if (0 == hash_object_len || hash_object_len > MAX_BCRYPT_OBJECT_LEN)
+    if (!CryptCreateHash(crypt_provider, CALG_HMAC, crypt_key, 0, &crypt_hash))
     {
-        BCryptCloseAlgorithmProvider(alg_handle, 0);
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
+        CryptDestroyKey(crypt_key);
+        CryptReleaseContext(crypt_provider, 0);
         return 1;
     }
 
-    hash_object = (BYTE *)calloc(1, hash_object_len);
-    if (NULL == hash_object)
+    HMAC_INFO hmac_info;
+    memset(&hmac_info, 0, sizeof(hmac_info));
+    hmac_info.HashAlgid = CALG_SHA1;
+
+    if (!CryptSetHashParam(crypt_hash, HP_HMAC_INFO, (BYTE *)&hmac_info, 0))
     {
-        BCryptCloseAlgorithmProvider(alg_handle, 0);
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
+        CryptDestroyHash(crypt_hash);
+        CryptDestroyKey(crypt_key);
+        CryptReleaseContext(crypt_provider, 0);
         return 1;
     }
 
-    if (BCryptCreateHash(alg_handle, &hash_handle, hash_object, hash_object_len, dec_shared_secret, dec_shared_secret_len, 0) < 0)
+    if (!CryptHashData(crypt_hash, time_array, sizeof(time_array), 0) ||
+        !CryptGetHashParam(crypt_hash, HP_HASHVAL, hdata, &hdata_len, 0))
     {
-        free(hash_object);
-        BCryptCloseAlgorithmProvider(alg_handle, 0);
+        SecureZeroMemory(&key_blob, sizeof(key_blob));
+        CryptDestroyHash(crypt_hash);
+        CryptDestroyKey(crypt_key);
+        CryptReleaseContext(crypt_provider, 0);
         return 1;
     }
 
-    if (BCryptHashData(hash_handle, (PUCHAR)time_array, sizeof(time_array), 0) < 0 ||
-        BCryptFinishHash(hash_handle, hdata, hdata_len, 0) < 0)
-    {
-        BCryptDestroyHash(hash_handle);
-        free(hash_object);
-        BCryptCloseAlgorithmProvider(alg_handle, 0);
-        return 1;
-    }
-
-    BCryptDestroyHash(hash_handle);
-    free(hash_object);
-    BCryptCloseAlgorithmProvider(alg_handle, 0);
+    SecureZeroMemory(&key_blob, sizeof(key_blob));
+    CryptDestroyHash(crypt_hash);
+    CryptDestroyKey(crypt_key);
+    CryptReleaseContext(crypt_provider, 0);
 #else
     uint8_t *hdata = HMAC(EVP_sha1(), dec_shared_secret, dec_shared_secret_len, time_array, 8, NULL, NULL);
     if (NULL == hdata)
