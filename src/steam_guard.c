@@ -16,19 +16,6 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
 {
     const char code_dict[27] = "23456789BCDFGHJKMNPQRTVWXY";
     const int code_dict_size = strlen(code_dict);
-
-#ifdef _WIN32
-    DWORD dec_shared_secret_len = 0;
-    if (!CryptStringToBinaryA(shared_secret, 0, CRYPT_STRING_BASE64, NULL, &dec_shared_secret_len, NULL, NULL))
-        return 1;
-
-    unsigned char dec_shared_secret[64];
-    if (dec_shared_secret_len > sizeof(dec_shared_secret))
-        return 1;
-
-    if (!CryptStringToBinaryA(shared_secret, 0, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
-        return 1;
-#else
     unsigned char dec_shared_secret[MAX_DECODED_SECRET_LEN];
     char shared_secret_buf[MAX_SHARED_SECRET_LEN];
     size_t shared_secret_end = strlen(shared_secret);
@@ -47,6 +34,13 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     memcpy(shared_secret_buf, shared_secret + shared_secret_offset, shared_secret_len);
     shared_secret_buf[shared_secret_len] = '\0';
 
+#ifdef _WIN32
+    DWORD dec_shared_secret_len = sizeof(dec_shared_secret);
+    if (!CryptStringToBinaryA(shared_secret_buf, shared_secret_len, CRYPT_STRING_BASE64, dec_shared_secret, &dec_shared_secret_len, NULL, NULL))
+        return 1;
+    if (0 == dec_shared_secret_len || dec_shared_secret_len > sizeof(dec_shared_secret))
+        return 1;
+#else
     int dec_shared_secret_len = EVP_DecodeBlock(dec_shared_secret, (unsigned char *)shared_secret_buf, shared_secret_len);
 
     if (-1 == dec_shared_secret_len)
@@ -88,7 +82,8 @@ int gen_auth_code(char *out, const char *shared_secret, const int server_time_di
     key_blob.key_size = dec_shared_secret_len;
     memcpy(key_blob.key_data, dec_shared_secret, dec_shared_secret_len);
 
-    if (!CryptAcquireContextA(&crypt_provider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
+    if (!CryptAcquireContextA(&crypt_provider, NULL, MS_ENHANCED_PROV_A, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) &&
+        !CryptAcquireContextA(&crypt_provider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
         return 1;
 
     if (!CryptImportKey(crypt_provider, (BYTE *)&key_blob, sizeof(BLOBHEADER) + sizeof(DWORD) + dec_shared_secret_len, 0, CRYPT_IPSEC_HMAC_KEY, &crypt_key))
